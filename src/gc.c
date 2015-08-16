@@ -1039,7 +1039,7 @@ static void sweep_malloced_arrays(void)
 }
 
 // Chain the page as a new page for the pool.
-static inline gcval_t *chain_page(pool_t *p, gcpage_t *pg)
+static inline gcval_t *reset_page(pool_t *p, gcpage_t *pg, gcval_t **_beg)
 {
     // Set metadata
     pg->gc_bits = 0;
@@ -1052,12 +1052,23 @@ static inline gcval_t *chain_page(pool_t *p, gcpage_t *pg)
     pg->fl_begin_offset = GC_PAGE_OFFSET;
     pg->fl_end_offset = (char*)end - (char*)beg + GC_PAGE_OFFSET;
 
-    // Construct skipping free list
     beg->next = end; // Store upper bound
+
+    *_beg = beg;
+    return end;
+}
+
+// Chain the page as a new page for the pool.
+static inline gcval_t *chain_page(pool_t *p, gcpage_t *pg)
+{
+    gcval_t *beg;
+    gcval_t *end = reset_page(p, pg, &beg);
+
+    // Construct skipping free list
     end->next = p->cur_ptr;
     p->orig_ptr = p->cur_ptr = beg;
     p->end_ptr = end;
-    return beg;
+    return end;
 }
 
 static NOINLINE void add_page(pool_t *p)
@@ -1261,7 +1272,7 @@ static gcval_t **chain_free_block(gcval_t **pfl, gcval_t *begin, gcval_t *end)
 
 // Returns pointer to terminal pointer of list rooted at *pfl.
 static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
-                            int sweep_mask, int osize)
+                            int sweep_mask, int osize, gcval_t **new_page)
 {
 #ifdef FREE_PAGES_EAGER
     int freedall;
@@ -1280,7 +1291,6 @@ static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
     freedall = 1;
     old_nfree += pg->nfree;
 
-    int page_linked = 0;
     if (pg->gc_bits == GC_MARKED) {
         // this page only contains GC_MARKED and free cells
         // if we are doing a quick sweep and nothing has been allocated
@@ -1296,7 +1306,6 @@ static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
             }
             pg_skpd++;
             freedall = 0;
-            page_linked = 1;
             goto free_page;
         }
     }
@@ -1353,7 +1362,6 @@ static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
         pg->nfree = pg_nfree;
         page_done++;
         pg->allocd = 0;
-        page_linked = 1;
     }
  free_page:
     pg_freedall += freedall;
@@ -1367,13 +1375,11 @@ static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
         if (sweep_mask == GC_MARKED_NOESC &&
             lazy_freed_pages <= default_collect_interval / GC_PAGE_SZ) {
             lazy_freed_pages++;
-            if (!page_linked) {
-                chain_page(p, pg);
-                if (prev_pfl == &p->cur_ptr) {
-                    prev_pfl = (gcval_t**)p->end_ptr;
-                }
-                pfl = prev_pfl;
-            }
+            pfl = prev_pfl;
+            gcval_t *beg;
+            gcval_t *end = reset_page(p, pg, &beg);
+            end->next = *new_page;
+            *new_page = beg;
         }
         else {
             pfl = prev_pfl;
@@ -1398,7 +1404,7 @@ static gcval_t **sweep_page(pool_t *p, gcpage_t *pg, gcval_t **pfl,
 
     skipped_pages += pg_skpd;
     total_pages += pg_total;
-    freed_bytes += (nfree - old_nfree)*osize;
+    freed_bytes += (nfree - old_nfree) * osize;
     return pfl;
 }
 
@@ -1432,7 +1438,7 @@ static void gc_sweep_once(int sweep_mask)
 }
 
 static void sweep_pool_region(gcval_t **pfl[N_POOLS], int region_i,
-                              int sweep_mask)
+                              int sweep_mask, gcval_t *new_pages[N_POOLS])
 {
     region_t *region = regions[region_i];
 
@@ -1449,7 +1455,8 @@ static void sweep_pool_region(gcval_t **pfl[N_POOLS], int region_i,
                     int p_n = pg->pool_n;
                     pool_t *p = &norm_pools[p_n];
                     int osize = pg->osize;
-                    pfl[p_n] = sweep_page(p, pg, pfl[p_n], sweep_mask, osize);
+                    pfl[p_n] = sweep_page(p, pg, pfl[p_n], sweep_mask, osize,
+                                          &new_pages[p_n]);
                 }
             }
         }
@@ -1495,6 +1502,7 @@ static int gc_sweep_inc(int sweep_mask)
     int finished = 1;
 
     gcval_t **pfl[N_POOLS];
+    gcval_t *new_pages[N_POOLS];
 
     // update metadata of pages that were pointed to by freelist or newpages
     // from a pool, i.e. pages being the current allocation target
@@ -1510,12 +1518,14 @@ static int gc_sweep_inc(int sweep_mask)
             }
             p->cur_ptr =  NULL;
             pfl[i] = &p->cur_ptr;
+            new_pages[i] = NULL;
         }
     END
 
     for (int i = 0; i < REGION_COUNT; i++) {
-        if (regions[i])
-            /*finished &= */sweep_pool_region(pfl, i, sweep_mask);
+        if (regions[i]) {
+            /*finished &= */sweep_pool_region(pfl, i, sweep_mask, new_pages);
+        }
     }
 
     // null out terminal pointers of free lists and cache back pg->nfree in
@@ -1524,7 +1534,7 @@ static int gc_sweep_inc(int sweep_mask)
         for (int i = 0; i < N_POOLS; i++) {
             pool_t* p = &HEAP(norm_pools)[i];
             uintptr_t single_bit = ((uintptr_t)*pfl[i]) & GC_FL_SINGLE;
-            *pfl[i] = (gcval_t*)single_bit;
+            *pfl[i] = (gcval_t*)(single_bit | (uintptr_t)new_pages[i]);
             /* if (p->cur_ptr) */
             /*     print_pool_fl_status(p); */
             p->orig_ptr = p->cur_ptr;

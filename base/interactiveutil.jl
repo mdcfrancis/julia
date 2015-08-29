@@ -227,15 +227,8 @@ function code_warntype(io::IO, f, t::ANY)
 end
 code_warntype(f, t::ANY) = code_warntype(STDOUT, f, t)
 
-function heuristic_static_typeof(args...)
-    :(Tuple{$(map(args) do a
-        if isa(a,Expr) && a.head == :(::)
-            a.args[end]
-        else
-            :(isa($a,Type) ? Type{$a} : typeof($a))
-        end
-    end)...})
-end
+typesof(args...) = Tuple{map(a->(isa(a,Type) ? Type{a} : typeof(a)), args)...}
+
 gen_call_with_extracted_types(fcn, ex0::Symbol) = Expr(:call, fcn, Meta.quot(ex0))
 function gen_call_with_extracted_types(fcn, ex0)
     if isa(ex0, Expr) &&
@@ -243,13 +236,13 @@ function gen_call_with_extracted_types(fcn, ex0)
         # keyword args not used in dispatch, so just remove them
         args = filter(a->!(Meta.isexpr(a, :kw) || Meta.isexpr(a, :parameters)), ex0.args)
         return Expr(:call, fcn, esc(args[1]),
-                    heuristic_static_typeof(map(esc, args[2:end])...))
-    end
-    if isa(ex0, Expr) && ex0.head == :call && any(a -> isa(a,Expr) && a.head == :(::), ex0.args)
-        return Expr(:call, fcn, esc(ex0.args[1]),
-                    heuristic_static_typeof(map(esc, ex0.args[2:end])...))
+                    Expr(:call, :typesof, map(esc, args[2:end])...))
     end
     ex = expand(ex0)
+    if isa(ex, Expr) && ex.head == :call
+        return Expr(:call, fcn, esc(ex.args[1]),
+                    Expr(:call, :typesof, map(esc, ex.args[2:end])...))
+    end
     exret = Expr(:call, :error, "expression is not a function call or symbol")
     if !isa(ex, Expr)
         # do nothing -> error
@@ -258,10 +251,10 @@ function gen_call_with_extracted_types(fcn, ex0)
             isa(ex.args[1], TopNode) && ex.args[1].name == :apply
             exret = Expr(:call, ex.args[1], fcn,
                          Expr(:tuple, esc(ex.args[2])),
-                         heuristic_static_typeof(map(esc, ex.args[3:end])...))
+                         Expr(:call, :typesof, map(esc, ex.args[3:end])...))
         else
             exret = Expr(:call, fcn, esc(ex.args[1]),
-                         heuristic_static_typeof(map(esc, ex.args[2:end])...))
+                         Expr(:call, :typesof, map(esc, ex.args[2:end])...))
         end
     elseif ex.head == :body
         a1 = ex.args[1]
@@ -269,7 +262,7 @@ function gen_call_with_extracted_types(fcn, ex0)
             a11 = a1.args[1]
             if a11 == :setindex!
                 exret = Expr(:call, fcn, a11,
-                             heuristic_static_typeof(map(esc, a1.args[2:end])...))
+                             Expr(:call, :typesof, map(esc, a1.args[2:end])...))
             end
         end
     elseif ex.head == :thunk

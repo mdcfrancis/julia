@@ -166,9 +166,15 @@ function doc(f::Function, sig::Type)
             for msig in fd.order
                 if sig <: msig
                     return fd.meta[msig]
+                elseif msig <: sig
+                    push!(results, fd.meta[msig])
                 end
             end
-            return catdoc([fd.meta[msig] for msig in reverse(fd.order)]...)
+            if isempty(results)
+                return catdoc([fd.meta[msig] for msig in reverse(fd.order)]...)
+            else
+                return catdoc(reverse(results)...)
+            end
         end
     end
     nothing

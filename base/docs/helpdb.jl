@@ -1328,14 +1328,14 @@ doc"""
 
 Make an uninitialized remote reference on the local machine.
 """
-RemoteRef
+RemoteRef()
 
 doc"""
     RemoteRef(n)
 
 Make an uninitialized remote reference on process `n`.
 """
-RemoteRef
+RemoteRef(::Integer)
 
 doc"""
 ```rst
@@ -1468,11 +1468,11 @@ Edit a file optionally providing a line number to edit at. Returns to the julia 
 edit(file::AbstractString, line=?)
 
 doc"""
-    edit(f::Function, [types])
+    edit(function, [types])
 
 Edit the definition of a function, optionally specifying a tuple of types to indicate which method to edit.
 """
-edit(::Function, [types])
+edit(::Function, types=?)
 
 doc"""
     backtrace()
@@ -5508,14 +5508,14 @@ doc"""
 
 Create a timer to call the given callback function. The callback is passed one argument, the timer object itself. The callback will be invoked after the specified initial delay, and then repeating with the given `repeat` interval. If `repeat` is `0`, the timer is only triggered once. Times are in seconds. A timer is stopped and has its resources freed by calling `close` on it.
 """
-Timer
+Timer(::Function,delay,repeat=0)
 
 doc"""
     Timer(delay, repeat=0)
 
 Create a timer that wakes up tasks waiting for it (by calling `wait` on the timer object) at a specified interval. Waiting tasks are woken with an error when the timer is closed (by `close`). Use `isopen` to check whether a timer is still active.
 """
-Timer
+Timer(delay, repeat=0)
 
 doc"""
     BoundsError([a],[i])
@@ -6180,7 +6180,7 @@ The distance between 1.0 and the next larger representable floating-point value 
 eps(::Any)
 
 doc"""
-    eps(x::FloatingPoint)
+    eps(x)
 
 The distance between `x` and the next larger representable floating-point value of the same type as `x`.
 """
@@ -6925,28 +6925,28 @@ doc"""
 
 Create an in-memory I/O stream.
 """
-IOBuffer
+IOBuffer()
 
 doc"""
     IOBuffer(size::Int)
 
 Create a fixed size IOBuffer. The buffer will not grow dynamically.
 """
-IOBuffer
+IOBuffer(size::Int)
 
 doc"""
     IOBuffer(string)
 
 Create a read-only IOBuffer on the data underlying the given string
 """
-IOBuffer
+IOBuffer(::AbstractString)
 
 doc"""
     IOBuffer([data,],[readable,writable,[maxsize]])
 
 Create an IOBuffer, which may optionally operate on a pre-existing array. If the readable/writable arguments are given, they restrict whether or not the buffer may be read from or written to respectively. By default the buffer is readable but not writable. The last argument optionally specifies a size beyond which the buffer may not be grown.
 """
-IOBuffer
+IOBuffer(data=?)
 
 doc"""
 ```rst
@@ -7136,14 +7136,14 @@ doc"""
 
 Read a value of the given type from a stream, in canonical binary representation.
 """
-read(stream, type)
+read(stream, t)
 
 doc"""
     read(stream, type, dims)
 
 Read a series of values of the given type from a stream, in canonical binary representation. `dims` is either a tuple or a series of integer arguments specifying the size of `Array` to return.
 """
-read(stream, type, dims)
+read(stream, t, dims)
 
 doc"""
 ```rst
@@ -9001,6 +9001,37 @@ Base.(:(*))(::AbstractMatrix, ::AbstractMatrix)
 
 doc"""
 ```rst
+..  \\(A, B)
+
+Matrix division using a polyalgorithm. For input matrices ``A`` and ``B``, the result ``X`` is such that ``A*X == B`` when ``A`` is square.  The solver that is used depends upon the structure of ``A``.  A direct solver is used for upper or lower triangular ``A``.  For Hermitian ``A`` (equivalent to symmetric ``A`` for non-complex ``A``) the ``BunchKaufman`` factorization is used.  Otherwise an LU factorization is used. For rectangular ``A`` the result is the minimum-norm least squares solution computed by a pivoted QR factorization of ``A`` and a rank estimate of A based on the R factor.
+
+When ``A`` is sparse, a similar polyalgorithm is used. For indefinite matrices, the LDLt factorization does not use pivoting during the numerical factorization and therefore the procedure can fail even for invertible matrices.
+```
+"""
+Base.(:(\))(A,B)
+
+doc"""
+```rst
+..  .\\(x, y)
+
+Element-wise left division operator.
+```
+"""
+Base.(:(.\))(x,y)
+
+doc"""
+```rst
+..  \\(x, y)
+
+Left division operator: multiplication of ``y`` by the inverse of ``x`` on the left.
+Gives floating-point results for integer arguments.
+```
+"""
+Base.(:(\))(x::Number,y::Number)
+
+
+doc"""
+```rst
 ..  *(x, y...)
 
 Multiplication operator. ``x*y*z*...`` calls this function with all arguments, i.e.
@@ -9017,7 +9048,7 @@ Concatenate strings. The ``*`` operator is an alias to this function.
 
 ```
 """
-Base.(:(*))(s, t)
+Base.(:(*))(s::AbstractString, t::AbstractString)
 
 doc"""
 ```rst
@@ -10428,7 +10459,7 @@ doc"""
 
 Copy `N` elements from collection `src` starting at offset `so`, to array `dest` starting at offset `do`. Returns `dest`.
 """
-copy!(dest,do,src,so,N)
+copy!(dest,d,src,so,N)
 
 doc"""
     broadcast(f, As...)
@@ -10752,7 +10783,7 @@ doc"""
 In-place version of :func:`map`.
 ```
 """
-map!(function,collection)
+map!(f,collection)
 
 doc"""
 ```rst
@@ -10763,7 +10794,7 @@ new collection. ``destination`` must be at least as large as the first
 collection.
 ```
 """
-map!(function,destination,collection...)
+map!(f,destination,collection...)
 
 doc"""
 ```rst
@@ -10894,7 +10925,7 @@ doc"""
 
 Create an array of all zeros of specified type. The type defaults to Float64 if not specified.
 """
-zeros(type,dims)
+zeros(t,dims)
 
 doc"""
     zeros(A)
@@ -11207,13 +11238,6 @@ Convert a number, array, or string to a `AbstractFloat` data type. For numeric d
 float
 
 doc"""
-    include(path::AbstractString)
-
-Evaluate the contents of a source file in the current context. During including, a task-local include path is set to the directory containing the file. Nested calls to `include` will search relative to that path. All paths refer to files on node 1 when running in parallel, and files will be fetched from node 1. This function is typically used to load source interactively, or to combine files in packages that are broken into multiple source files.
-"""
-include
-
-doc"""
     include_dependency(path::AbstractString)
 
 In a module, declare that the file specified by `path` (relative or absolute) is a dependency for precompilation; that is, the module will need to be recompiled if this file changes.
@@ -11273,7 +11297,7 @@ doc"""
 
 Compute the histogram of `v`, optionally using approximately `n` bins. The return values are a range `e`, which correspond to the edges of the bins, and `counts` containing the number of elements of `v` in each bin. Note: Julia does not ignore `NaN` values in the computation.
 """
-hist(v,?)
+hist(v,n::Int=?)
 
 doc"""
     hist(v, e) -> e, counts
@@ -11932,7 +11956,7 @@ doc"""
 Construct a DateTime type by parts. Arguments must be convertible to ``Int64``.
 ```
 """
-Dates.DateTime
+Dates.DateTime(y)
 
 doc"""
 ```rst
@@ -11942,7 +11966,7 @@ Constuct a DateTime type by ``Period`` type parts. Arguments may be in any order
 DateTime parts not provided will default to the value of ``Dates.default(period)``.
 ```
 """
-Dates.DateTime
+Dates.DateTime(periods::Dates.Period...)
 
 doc"""
 ```rst
@@ -11955,7 +11979,7 @@ will stop when ``f::Function`` returns false instead of true. ``limit`` provides
 the max number of iterations the adjustment API will pursue before throwing an error (in the case that ``f::Function`` is never satisfied).
 ```
 """
-Dates.DateTime
+Dates.DateTime(f::Function, y)
 
 doc"""
 ```rst
@@ -11965,7 +11989,7 @@ Converts a ``Date`` type to a ``DateTime``.
 The hour, minute, second, and millisecond parts of the new ``DateTime`` are assumed to be zero.
 ```
 """
-Dates.DateTime
+Dates.DateTime(dt::Date)
 
 doc"""
 ```rst
@@ -11995,7 +12019,7 @@ All characters not listed above are treated as delimiters between date and time 
 So a ``dt`` string of "1996-01-15T00:00:00.0" would have a ``format`` string like "y-m-dTH:M:S.s".
 ```
 """
-Dates.DateTime
+Dates.DateTime(dt::AbstractString, format::AbstractString)
 
 doc"""
 ```rst
@@ -12004,7 +12028,7 @@ doc"""
 Similar form as above for parsing a ``DateTime``, but passes a ``DateFormat`` object instead of a raw formatting string. It is more efficient if similarly formatted date strings will be parsed repeatedly to first create a ``DateFormat`` object then use this method for parsing.
 ```
 """
-Dates.DateTime
+Dates.DateTime(dt::AbstractString, df::Dates.DateFormat)
 
 doc"""
     datetime2rata(dt::TimeType) -> Int64
@@ -12032,42 +12056,42 @@ doc"""
 
 Construct a `Date` type by parts. Arguments must be convertible to `Int64`.
 """
-Dates.Date
+Dates.Date(y)
 
 doc"""
     Date(period::Period...) -> Date
 
 Constuct a Date type by `Period` type parts. Arguments may be in any order. Date parts not provided will default to the value of `Dates.default(period)`.
 """
-Dates.Date
+Dates.Date(period::Dates.Period...)
 
 doc"""
     Date(f::Function, y[, m]; step=Day(1), negate=false, limit=10000) -> Date
 
 Create a Date through the adjuster API. The starting point will be constructed from the provided `y, m` arguments, and will be adjusted until `f::Function` returns true. The step size in adjusting can be provided manually through the `step` keyword. If `negate=true`, then the adjusting will stop when `f::Function` returns false instead of true. `limit` provides a limit to the max number of iterations the adjustment API will pursue before throwing an error (given that `f::Function` is never satisfied).
 """
-Dates.Date
+Dates.Date(f::Function, y)
 
 doc"""
     Date(dt::DateTime) -> Date
 
 Converts a `DateTime` type to a `Date`. The hour, minute, second, and millisecond parts of the `DateTime` are truncated, so only the year, month and day parts are used in construction.
 """
-Dates.Date
+Dates.Date(dt::DateTime)
 
 doc"""
     Date(dt::AbstractString, format::AbstractString; locale="english") -> Date
 
 Construct a Date type by parsing a `dt` date string following the pattern given in the `format` string. Follows the same conventions as `DateTime` above.
 """
-Dates.Date
+Dates.Date(dt::AbstractString, format::AbstractString)
 
 doc"""
     Date(dt::AbstractString, df::DateFormat) -> Date
 
 Parse a date from a date string `dt` using a `DateFormat` object `df`.
 """
-Dates.Date
+Dates.Date(dt::AbstractString, df::Dates.DateFormat)
 
 doc"""
     firstdayofmonth(dt::TimeType) -> TimeType
@@ -12567,3 +12591,22 @@ Create an array of the size `jumps` of initialized `MersenneTwister` RNG objects
 Default jump polynomial moves forward `MersenneTwister` RNG state by 10^20 steps.
 """
 randjump
+
+doc"""
+```rst
+..  \:(start, [step], stop)
+
+Range operator. ``a:b`` constructs a range from ``a`` to ``b`` with a step size of 1, and ``a:s:b`` is similar but uses a step size of ``s``. These syntaxes call the function ``colon``.
+The colon is also used in indexing to select whole dimensions.
+```
+"""
+colon(start, step, stop)
+
+doc"""
+```rst
+..  $(x, y)
+
+Bitwise exclusive or
+```
+"""
+Base.(:$)(x, y)

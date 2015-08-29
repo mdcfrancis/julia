@@ -152,6 +152,9 @@ function doc!(f::Function, sig::ANY, data, source)
     isa(fd, FuncDoc) || error("Can't document a method when the function already has metadata")
     !haskey(fd.meta, sig) && push!(fd.order, sig)
     sort!(fd.order, lt = (a,b) -> ccall(:jl_type_morespecific, Int32, (Any,Any), a, b) > 0)
+    if haskey(ENV, "GO_AWAY") && haskey(fd.meta, sig) # temporary
+        error("Adding doc to $f($sig) forbidden GO AWAY")
+    end
     fd.meta[sig] = data
     fd.source[sig] = source
 end

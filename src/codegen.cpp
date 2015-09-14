@@ -87,6 +87,8 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 
+#include "llvm//MC/SubtargetFeature.h"
+
 #if defined(_OS_WINDOWS_) && !defined(NOMINMAX)
 #define NOMINMAX
 #endif
@@ -5911,6 +5913,43 @@ static void init_julia_llvm_env(Module *m)
     FPM->doInitialization();
 }
 
+
+
+static inline SmallVector<std::string,10> getTargetFeatures(std::string TheCPU) {
+  StringMap<bool> HostFeatures;
+  if( TheCPU == "native" )
+    llvm::sys::getHostCPUFeatures(HostFeatures);
+
+  // Platform specific overides follow
+#if defined(_CPU_X86_64_) || defined(_CPU_X86_)
+#ifndef USE_MCJIT
+    // Temporarily disable Haswell BMI2 features due to LLVM bug.
+    HostFeatures["bmi2"] = false;
+    HostFeatures["avx2"] = false;
+#endif
+#ifdef V128_BUG
+    HostFeatures["avx"] = false;
+#endif
+#endif
+
+  if (TheCPU.empty() || TheCPU == "generic") {
+    jl_printf(JL_STDERR, "WARNING: unable to determine host cpu name.\n");
+#ifdef _CPU_ARM_
+    // Check if this is required when you have read the features directly from the processor
+    // the processors that don't have VFP are old and (hopefully) rare. this affects the platform calling convention.
+    HostFeatures["vfp2"] = true;
+#endif
+  }
+
+  SmallVector<std::string,10> attr;
+  for (auto &F : HostFeatures)
+  {
+    std::string att =F.second?F.first().str():std::string("-") + F.first().str();
+    attr.append( 1, att );
+  }
+  return attr;
+}
+
 extern "C" void jl_init_codegen(void)
 {
 #if defined(_OS_WINDOWS_) && defined(_CPU_X86_64_)
@@ -5976,19 +6015,6 @@ extern "C" void jl_init_codegen(void)
 #ifdef USE_MCJIT
     jl_mcjmm = new SectionMemoryManager();
 #endif
-    const char *mattr[] = {
-#if defined(_CPU_X86_64_) || defined(_CPU_X86_)
-#ifndef USE_MCJIT
-        // Temporarily disable Haswell BMI2 features due to LLVM bug.
-        "-bmi2", "-avx2",
-#endif
-#ifdef V128_BUG
-        "-avx",
-#endif
-#endif
-        "", // padding to make sure this isn't an empty array (ref #11817)
-    };
-    SmallVector<std::string, 4> MAttrs(mattr, mattr+sizeof(mattr)/sizeof(mattr[0]));
 #ifdef LLVM36
     EngineBuilder eb(std::move(std::unique_ptr<Module>(engine_module)));
 #else
@@ -6016,18 +6042,14 @@ extern "C" void jl_init_codegen(void)
     TheTriple.setEnvironment(Triple::ELF);
 #endif
 #endif
+
     std::string TheCPU = strcmp(jl_options.cpu_target,"native") ? jl_options.cpu_target : sys::getHostCPUName();
-    if (TheCPU.empty() || TheCPU == "generic") {
-        jl_printf(JL_STDERR, "WARNING: unable to determine host cpu name.\n");
-#ifdef _CPU_ARM_
-        MAttrs.append(1, "+vfp2"); // the processors that don't have VFP are old and (hopefully) rare. this affects the platform calling convention.
-#endif
-    }
+    auto targetFeatures = getTargetFeatures( TheCPU );
     TargetMachine *targetMachine = eb.selectTarget(
             TheTriple,
             "",
             TheCPU,
-            MAttrs);
+            targetFeatures);
     assert(targetMachine && "Failed to select target machine -"
                             " Is the LLVM backend for this CPU enabled?");
     jl_TargetMachine = targetMachine->getTarget().createTargetMachine(

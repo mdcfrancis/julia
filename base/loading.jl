@@ -376,8 +376,8 @@ function create_expr_cache(input::AbstractString, output::AbstractString)
     end
 end
 
-compilecache(mod::Symbol) = compilecache(string(mod))
-function compilecache(name::ByteString)
+compilecache(mod::Symbol, force::Bool = false) = compilecache(string(mod), force)
+function compilecache(name::ByteString, force::Bool = false)
     myid() == 1 || error("can only precompile from node 1")
     path = find_in_path(name, nothing)
     path === nothing && throw(ArgumentError("$name not found in path"))
@@ -385,9 +385,13 @@ function compilecache(name::ByteString)
     if !isdir(cachepath)
         mkpath(cachepath)
     end
-    cachefile = abspath(cachepath, name*".ji")
-    if !success(create_expr_cache(path, cachefile))
+    cachefile = abspath(cachepath, name*".ji")        
+    if force || stat( cachefile ).size == 0 || stale_cachefile( path, cachefile)
+      if !success(create_expr_cache(path, cachefile))
         error("Failed to precompile $name to $cachefile")
+      else
+        info("Precompiled $name to $cachefile")
+      end
     end
     return cachefile
 end

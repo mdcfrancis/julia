@@ -1,7 +1,7 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
 # Base.require is the implementation for the `import` statement
-
+secs( st::UInt64 ) = (time_ns() - st ) / 1e9
 # `wd` is a working directory to search. defaults to current working directory.
 # if `wd === nothing`, no extra path is searched.
 function find_in_path(name::AbstractString, wd = pwd())
@@ -75,7 +75,7 @@ function _require_from_serialized(node::Int, mod::Symbol, path_to_try::ByteStrin
             refs = Any[ @spawnat p (nothing !== _include_from_serialized(content)) for p in others]
             for (id, ref) in zip(others, refs)
                 if !fetch(ref)
-                    warn("node state is inconsistent: node $id failed to load cache from $path_to_try")
+                    warn("$(now()) : node state is inconsistent: node $id failed to load cache from $path_to_try")
                 end
             end
         end
@@ -108,7 +108,7 @@ function _require_from_serialized(node::Int, mod::Symbol, toplevel_load::Bool)
     for path_to_try in paths
         restored = _require_from_serialized(node, mod, path_to_try, toplevel_load)
         if restored === nothing
-            warn("deserialization checks failed while attempting to load cache from $path_to_try")
+            warn("$(now()) : deserialization checks failed while attempting to load cache from $path_to_try")
         else
             return restored
         end
@@ -214,16 +214,19 @@ function require(mod::Symbol)
     package_locks[mod] = Condition()
 
     last = toplevel_load::Bool
+    st = time_ns()
     try
         toplevel_load = false
         if nothing !== _require_from_serialized(1, mod, last)
+            info( "$(now()) : loading precompiled $mod - $(secs(st) )" )
             return
         end
         if JLOptions().incremental != 0
             # spawn off a new incremental precompile task from node 1 for recursive `require` calls
+            info( "$(now()) : incremental precompile $mod - $(secs(st))" )
             cachefile = compilecache(mod)
             if nothing === _require_from_serialized(1, mod, cachefile, last)
-                warn("require failed to create a precompiled cache file")
+                warn("$(now()) : require failed to create a precompiled cache file")
             end
             return
         end
@@ -234,19 +237,21 @@ function require(mod::Symbol)
         try
             if last && myid() == 1 && nprocs() > 1
                 # include on node 1 first to check for PrecompilableErrors
+                info( "About to eval $path")
                 eval(Main, :(Base.include_from_node1($path)))
 
                 # broadcast top-level import/using from node 1 (only)
                 refs = Any[ @spawnat p eval(Main, :(Base.include_from_node1($path))) for p in filter(x -> x != 1, procs()) ]
                 for r in refs; wait(r); end
             else
+                info( "About to eval $path")
                 eval(Main, :(Base.include_from_node1($path)))
             end
         catch ex
             if !precompilableerror(ex, true)
                 rethrow() # rethrow non-precompilable=true errors
             end
-            isinteractive() && info("Precompiling module $mod...")
+            warn("$(now()) : Recompiling module $mod...")
             cachefile = compilecache(mod)
             if nothing === _require_from_serialized(1, mod, cachefile, last)
                 error("__precompile__(true) but require failed to create a precompiled cache file")
@@ -258,6 +263,7 @@ function require(mod::Symbol)
         notify(loading, all=true)
         _track_dependencies[1] = old_track_dependencies
     end
+    info("$(now()) : using $mod - $(secs(st))")
     nothing
 end
 
@@ -454,12 +460,12 @@ function recompile_stale(mod, cachefile)
     path = find_in_path(string(mod), nothing)
     if path === nothing
         rm(cachefile)
-        error("module $mod not found in current path; removed orphaned cache file $cachefile")
+        error("$(now()) : module $mod not found in current path; removed orphaned cache file $cachefile")
     end
     if stale_cachefile(path, cachefile)
-        info("Recompiling stale cache file $cachefile for module $mod.")
+        info("$(now()) : Recompiling stale cache file $cachefile for module $mod.")
         if !success(create_expr_cache(path, cachefile))
-            error("Failed to precompile $mod to $cachefile")
+            error("$(now()) : Failed to precompile $mod to $cachefile")
         end
     end
 end

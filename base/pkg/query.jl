@@ -216,7 +216,7 @@ function prune_versions(reqs::Requires, deps::Dict{ByteString,Dict{VersionNumber
             push!(vm, in(vn, vs))
         end
     end
-
+    
     # At this point, the vmask patterns are computed. We divide them into
     # classes so that we can keep just one version for each class.
     pruned_vers = Dict{ByteString,Vector{VersionNumber}}()

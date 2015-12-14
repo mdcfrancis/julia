@@ -176,6 +176,8 @@ function greedysolver(interface::Interface)
                 if rv > 0 && (sol[rp0] == spp[rp0] || sol[rp0] == rv)
                     sol[rp0] = rv
                 else
+                    error( "Unable to resolve dependecies for $p -> $rp @ $rvs found $(pvers[rp0])\n"
+                      * "This probably is due to a max version specified on $rp package" )
                     return (false, Int[])
                 end
 

@@ -20,6 +20,7 @@ function resolve(reqs::Requires, deps::Dict{ByteString,Dict{VersionNumber,Availa
     ok, sol = greedysolver(interface)
     if !ok
         # trivial solution failed, use maxsum solver
+        warn( "Complex tree of packages - going to do some random shit")
         graph = Graph(interface)
         msgs = Messages(interface, graph)
 

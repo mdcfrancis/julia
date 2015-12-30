@@ -1210,6 +1210,21 @@ jl_methlist_t *jl_method_list_insert(jl_methlist_t **pml, jl_tupletype_t *type,
                 print_func_loc(s, method->linfo);
                 jl_printf(s, ".\n");
             }
+            // FIXME - detect if this is interactive, should be error if not ...
+            if (check_amb && l->func->linfo && method->linfo &&
+                (l->func->linfo->module == method->linfo->module)) {
+                jl_module_t *newmod = method->linfo->module;
+                JL_STREAM *s = JL_STDERR;
+                jl_printf(s, "WARNING: Method definition %s", method->linfo->name->name);
+                jl_static_show_func_sig(s, (jl_value_t*)type);
+                jl_printf(s, " overwritten in same module %s", newmod->name->name);
+                print_func_loc(s, method->linfo);
+                jl_printf(s, "\noriginal definition");
+                print_func_loc(s, l->func->linfo);
+                jl_printf(s,".\n");
+                // This should throw an error, but base has a number of overwritten functions
+                //jl_errorf("Method definition overwrite of %s in %s",method->linfo->name->name, newmod->name->name );
+            }
             JL_SIGATOMIC_BEGIN();
             l->sig = type;
             jl_gc_wb(l, l->sig);
